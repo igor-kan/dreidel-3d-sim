@@ -85,6 +85,7 @@ npm run build
 
 - deploys `dist/` on pushes to `main`
 - uses repo secret `VITE_API_BASE_URL` (optional)
+- auto-skips until GitHub Pages is enabled in repository settings
 
 If `VITE_API_BASE_URL` is not set, Pages deployment still works and the app falls back to local browser history.
 
@@ -98,3 +99,5 @@ Required repository secrets:
 - `VERCEL_ORG_ID`
 - `VERCEL_PROJECT_ID`
 - `VITE_API_BASE_URL` (optional, recommended for external API)
+
+The workflow auto-skips when required Vercel secrets are not configured yet.
