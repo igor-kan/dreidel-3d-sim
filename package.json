@@ -4,17 +4,30 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "tsc -b && vite build",
-    "check": "tsc --noEmit",
+    "dev": "concurrently -k \"npm:dev:server\" \"npm:dev:client\"",
+    "dev:client": "vite",
+    "dev:server": "tsx watch server/index.ts",
+    "serve:api": "tsx server/index.ts",
+    "build": "npm run check && npm run build:client",
+    "build:client": "vite build",
+    "check": "npm run check:client && npm run check:server",
+    "check:client": "tsc --noEmit -p tsconfig.json",
+    "check:server": "tsc --noEmit -p tsconfig.server.json",
     "preview": "vite preview"
   },
   "dependencies": {
     "cannon-es": "^0.20.0",
+    "cors": "^2.8.5",
+    "express": "^4.21.2",
     "three": "^0.177.0"
   },
   "devDependencies": {
+    "@types/cors": "^2.8.17",
+    "@types/express": "^5.0.1",
+    "@types/node": "^22.13.10",
     "@types/three": "^0.184.0",
+    "concurrently": "^9.1.2",
+    "tsx": "^4.19.3",
     "typescript": "^5.6.3",
     "vite": "^6.3.5"
   }
