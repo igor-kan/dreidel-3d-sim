@@ -1,0 +1,21 @@
+{
+  "name": "dreidel-3d-sim",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "check": "tsc --noEmit",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "cannon-es": "^0.20.0",
+    "three": "^0.177.0"
+  },
+  "devDependencies": {
+    "@types/three": "^0.184.0",
+    "typescript": "^5.6.3",
+    "vite": "^6.3.5"
+  }
+}
