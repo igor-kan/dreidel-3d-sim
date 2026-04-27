@@ -1,18 +1,30 @@
 # Custom Dreidel GLB Models
 
-The simulator supports loading external dreidel assets through model presets.
+This simulator loads external dreidel visuals from this folder via model presets in
+`src/sim/dreidelModels.ts`.
 
-## Expected files
+## Included GLB assets
 
-Place these files in this folder:
+- `dreidel-oak.glb` (converted from Wikimedia STL)
+- `dreidel-ceramic.glb` (converted from Adafruit CAD STL)
+- `dreidel-wiki-smooth.glb` (Wikimedia historical revision)
+- `dreidel-wiki-vintage.glb` (Wikimedia historical revision)
 
-- `dreidel-oak.glb`
-- `dreidel-ceramic.glb`
+## Source assets and zips
 
-If a file is missing or fails to load, the app automatically falls back to procedural dreidel geometry while preserving physics and result detection.
+Original downloads are stored in:
 
-## Alignment notes
+- `public/models/sources/`
 
-- Keep the model upright with +Y as up.
-- Keep the model centered around origin before export when possible.
-- If your model orientation is off, adjust `rotationY` in `src/sim/dreidelModels.ts`.
+## Adding your own model
+
+1. Add your `.glb` file in `public/models/`.
+2. Add/update a preset in `src/sim/dreidelModels.ts`.
+3. Tune `scale`, `yOffset`, and `rotationY` if needed.
+
+If a GLB fails to load, the app automatically falls back to procedural dreidel geometry.
+
+## More documentation
+
+- `docs/DREIDEL_MODEL_DOWNLOADS.md`
+- `docs/BUILD_SPINNABLE_DREIDEL_MODEL.md`

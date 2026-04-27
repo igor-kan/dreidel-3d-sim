@@ -64,7 +64,7 @@ export const DREIDEL_MODELS: DreidelModelDefinition[] = [
   },
   {
     key: "glb-oak",
-    label: "GLB Oak (drop file in /public/models)",
+    label: "GLB Oak (Wikimedia)",
     bodyTopRadius: 0.36,
     bodyBottomRadius: 0.5,
     bodyHeight: 0.92,
@@ -88,7 +88,7 @@ export const DREIDEL_MODELS: DreidelModelDefinition[] = [
   },
   {
     key: "glb-ceramic",
-    label: "GLB Ceramic (drop file in /public/models)",
+    label: "GLB Ceramic (Adafruit)",
     bodyTopRadius: 0.4,
     bodyBottomRadius: 0.57,
     bodyHeight: 0.86,
@@ -105,6 +105,54 @@ export const DREIDEL_MODELS: DreidelModelDefinition[] = [
     visual: {
       kind: "gltf",
       assetUrl: "/models/dreidel-ceramic.glb",
+      scale: 1,
+      yOffset: 0,
+      rotationY: 0
+    }
+  },
+  {
+    key: "glb-wiki-smooth",
+    label: "GLB Wiki Smooth (Wikimedia v3)",
+    bodyTopRadius: 0.36,
+    bodyBottomRadius: 0.5,
+    bodyHeight: 0.92,
+    tipHeight: 0.42,
+    tipRadius: 0.24,
+    stemHeight: 0.34,
+    stemRadius: 0.11,
+    mass: 0.09,
+    colorA: 0x7f5d40,
+    colorB: 0x5a3e2b,
+    stemColor: 0xc9a88a,
+    faceOrder: ["Nun", "Gimel", "Hei", "Shin"],
+    faceAngleOffset: 0,
+    visual: {
+      kind: "gltf",
+      assetUrl: "/models/dreidel-wiki-smooth.glb",
+      scale: 1,
+      yOffset: 0,
+      rotationY: 0
+    }
+  },
+  {
+    key: "glb-wiki-vintage",
+    label: "GLB Wiki Vintage (Wikimedia v4)",
+    bodyTopRadius: 0.34,
+    bodyBottomRadius: 0.48,
+    bodyHeight: 0.9,
+    tipHeight: 0.4,
+    tipRadius: 0.22,
+    stemHeight: 0.32,
+    stemRadius: 0.1,
+    mass: 0.09,
+    colorA: 0x9d6f4b,
+    colorB: 0x6b452d,
+    stemColor: 0xd8bd9f,
+    faceOrder: ["Nun", "Gimel", "Hei", "Shin"],
+    faceAngleOffset: 0,
+    visual: {
+      kind: "gltf",
+      assetUrl: "/models/dreidel-wiki-vintage.glb",
       scale: 1,
       yOffset: 0,
       rotationY: 0

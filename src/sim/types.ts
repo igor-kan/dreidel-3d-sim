@@ -32,6 +32,16 @@ export interface SpinOptions {
   tilt: number;
 }
 
+export interface SpinLaunchInput {
+  source: "gesture" | "admin" | "api";
+  tiltX?: number;
+  tiltZ?: number;
+  dragDirection?: {
+    x: number;
+    y: number;
+  };
+}
+
 export interface DreidelResult {
   value: DreidelValue;
   confidence: number;

@@ -1,19 +1,42 @@
-# Dreidel 3D Physics Sim
+# Dreidel 3D Physics Arena
 
-A browser-based 3D dreidel simulation with rigid-body physics, animated spin/fall behavior, multiple visual model variants, and programmatic value detection once the top settles.
+A browser-based 3D dreidel game with realistic rigid-body simulation, gesture-based control, multiplayer lobby visibility, auth, leaderboard, and payment intent flows.
+
+## Core Gameplay Controls
+
+- Camera rotate: drag anywhere in the viewport
+- Camera zoom: wheel (desktop) or pinch (mobile)
+- Tilt setup: drag from the center of the dreidel body
+- Spin launch: drag from the top stem outward
+- Programmatic value detection after settle (`Nun`, `Gimel`, `Hei`, `Shin`)
+
+To keep outcomes fair, non-admin launches always include random perturbation and cannot force deterministic landings.
 
 ## Features
 
-- Real-time 3D rendering with `three.js`
-- Rigid-body physics with `cannon-es`
-- Programmatic side detection (`Nun`, `Gimel`, `Hei`, `Shin`) from final orientation
-- Multiple visual variants, including external GLB model loading from `public/models`
-- Persistent backend API for spin history + statistics (`Express` + JSON file store)
-- Browser fallback mode with local history if API is unavailable
-- Browser hooks:
-  - `window.getLastDreidelResult()`
-  - `window.getDreidelStats()`
-  - `window.addEventListener("dreidel:settled", ...)`
+- `three.js` rendering + `cannon-es` physics
+- Multiple dreidel models (procedural + external GLB assets)
+- Local/register login, Google OAuth, GitHub OAuth
+- Roles: `user`, `admin`, `developer`
+- Admin/developer-only manual slider launch controls
+- Lobby view with up to 8 concurrent players
+- Leaderboard from persisted user stats
+- Payment intents for Solana, Ethereum, Polygon, Base
+- Persistence supports:
+  - Postgres via `DATABASE_URL` (recommended for production)
+  - JSON file fallback for local/dev
+- JSON fallback files:
+  - `data/spin-results.json`
+  - `data/users.json`
+  - `data/payment-intents.json`
+
+## Free Dreidel Models + Authoring Docs
+
+- Free model sources and download format guide: `docs/DREIDEL_MODEL_DOWNLOADS.md`
+- Build your own spinnable model guide: `docs/BUILD_SPINNABLE_DREIDEL_MODEL.md`
+- Source attribution: `public/models/ATTRIBUTION.md`
+
+Runtime recommendation: ship dreidel models as `.glb`.
 
 ## Local Development
 
@@ -22,45 +45,73 @@ npm install
 npm run dev
 ```
 
-This starts:
+- Frontend: `http://localhost:5173`
+- API: `http://localhost:8787`
 
-- frontend: `http://localhost:5173`
-- API server: `http://localhost:8787`
+## Environment Variables
 
-Vite proxies `/api/*` requests to the local backend during development.
+Use `.env` (or Vercel project env) for production setup.
 
-## Backend API
+```bash
+# Core
+APP_BASE_URL=https://your-app.example
+API_BASE_URL=https://your-app.example
+AUTH_JWT_SECRET=replace-with-long-random-secret
+CORS_ORIGINS=https://your-app.example,https://www.your-app.example
+DATABASE_URL=postgres://user:password@host:5432/dbname
+# Optional: disable SSL for local postgres only
+DATABASE_SSL_MODE=disable
+# Optional: if Postgres is down/misconfigured, continue using JSON fallback
+DB_FALLBACK_TO_JSON=true
+# Optional: auto-import existing JSON data into empty Postgres tables
+DB_BOOTSTRAP_FROM_JSON=true
 
-### `POST /api/results`
-Store a spin result.
+# OAuth (optional)
+GOOGLE_CLIENT_ID=
+GOOGLE_CLIENT_SECRET=
+GOOGLE_CALLBACK_URL=https://your-app.example/api/oauth-google-callback
 
-Body shape:
+GITHUB_CLIENT_ID=
+GITHUB_CLIENT_SECRET=
+GITHUB_CALLBACK_URL=https://your-app.example/api/oauth-github-callback
 
-```json
-{
-  "value": "Nun",
-  "confidence": 0.91,
-  "spinRateAtRest": 0.03,
-  "linearSpeedAtRest": 0.01,
-  "modelKey": "classic",
-  "timestamp": 1760000000000
-}
+# Payment merchant addresses
+SOLANA_MERCHANT_ADDRESS=
+ETHEREUM_MERCHANT_ADDRESS=
+POLYGON_MERCHANT_ADDRESS=
+BASE_MERCHANT_ADDRESS=
+# Optional fallback for EVM chains
+EVM_MERCHANT_ADDRESS=
+
+# Optional role bootstrap lists
+ADMIN_EMAILS=admin@example.com
+DEVELOPER_EMAILS=dev@example.com
 ```
 
-### `GET /api/results?limit=20`
-Returns recent stored results.
+## API Overview
 
-### `GET /api/stats`
-Returns aggregate stats (`totalSpins`, `averageConfidence`, by-value counts, by-model counts, etc.).
-
-## Data Persistence
-
-- Server-side history is stored in `data/spin-results.json`.
-- File is auto-created on first successful `POST /api/results`.
-
-## External 3D Models
-
-Put GLB files in `public/models/` (see `public/models/README.md`) and choose the corresponding `GLB ...` preset in the model picker.
+- Auth
+  - `GET /api/auth-me`
+  - `POST /api/auth-register`
+  - `POST /api/auth-login`
+  - `POST /api/auth-logout`
+  - `GET /api/oauth-google`
+  - `GET /api/oauth-github`
+- Spins/Stats
+  - `POST /api/results`
+  - `GET /api/results?limit=20`
+  - `GET /api/stats`
+  - `GET /api/health` (includes oauth/payment/storage readiness)
+- Lobby/Leaderboard
+  - `GET /api/lobby`
+  - `POST /api/lobby-join`
+  - `POST /api/lobby-heartbeat`
+  - `POST /api/lobby-leave`
+  - `GET /api/leaderboard?limit=20`
+- Payments
+  - `GET /api/payments-intents`
+  - `POST /api/payments-intents`
+  - `POST /api/payments-submit`
 
 ## Build and Checks
 
@@ -69,35 +120,70 @@ npm run check
 npm run build
 ```
 
-## CI and Deploy
+## Vercel Deployment
 
-### CI
+This repo includes a Vercel serverless API entrypoint at `api/[...all].ts` that serves the Express API routes.
 
-`/.github/workflows/ci.yml`
+Deploy manually:
 
-- install
-- type-check (`client + server`)
-- build frontend
+```bash
+vercel --prod
+```
 
-### GitHub Pages
+Or use GitHub Actions workflow:
 
-`/.github/workflows/deploy-pages.yml`
+- `.github/workflows/deploy-vercel.yml`
 
-- deploys `dist/` on pushes to `main`
-- uses repo secret `VITE_API_BASE_URL` (optional)
-- auto-skips until GitHub Pages is enabled in repository settings
 
-If `VITE_API_BASE_URL` is not set, Pages deployment still works and the app falls back to local browser history.
+<!-- ZERO_BUDGET_README:START -->
+## Zero-Budget Deployment
 
-### Vercel
+This repository is maintained under a strict 0 dollars per month deployment policy.
 
-`/.github/workflows/deploy-vercel.yml`
+- Primary policy and migration options: DEPLOYMENT_ZERO_BUDGET.md
+- Agent rules and constraints: AGENTS.md
+- Execution checklist: TASKS.md
 
-Required repository secrets:
+If Vercel no longer fits free-tier limits, migrate to Cloudflare Pages or GitHub Pages per the runbook.
+<!-- ZERO_BUDGET_README:END -->
 
-- `VERCEL_TOKEN`
-- `VERCEL_ORG_ID`
-- `VERCEL_PROJECT_ID`
-- `VITE_API_BASE_URL` (optional, recommended for external API)
+<!-- REPO_ANALYSIS_OVERVIEW_START -->
+## Repository Analysis Snapshot
 
-The workflow auto-skips when required Vercel secrets are not configured yet.
+Generated: 2026-04-21
+
+- Primary stack: Node.js, Vite, TypeScript
+- Key paths: `src`, `api`, `server`, `public`, `docs`, `.github/workflows`, `README.md`, `package.json`
+- Files scanned (capped): 60
+- Test signal: No obvious automated test structure detected
+- CI workflows present: Yes
+- GitHub slug: igor-kan/dreidel-3d-sim
+- GitHub last push: 2026-04-19T19:23:14Z
+
+### Quick Commands
+
+Setup:
+- `npm ci`
+
+Run:
+- `npm run dev`
+
+Quality:
+- `npm run build`
+
+### Companion Docs
+
+- `AGENTS.md`
+- `TASKS.md`
+- `PLANNING.md`
+- `RESEARCH.md`
+- `PROJECT_BRIEF.md`
+
+### Web Research References
+
+- Origin remote: `https://github.com/igor-kan/dreidel-3d-sim.git`
+- GitHub homepage: Not set
+- `Node.js: https://nodejs.org/en/docs`
+- `Vite: https://vite.dev/guide/`
+- `TypeScript: https://www.typescriptlang.org/docs/`
+<!-- REPO_ANALYSIS_OVERVIEW_END -->

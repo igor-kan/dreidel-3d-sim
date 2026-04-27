@@ -9,10 +9,14 @@ import {
   loadDreidelVisual
 } from "./dreidelModels";
 import { detectFaceUp } from "./faceDetection";
-import type { DreidelModelDefinition, DreidelResult, SpinOptions } from "./types";
+import type { DreidelModelDefinition, DreidelResult, SpinLaunchInput, SpinOptions } from "./types";
 
 const PHYSICS_FIXED_STEP = 1 / 120;
 const MAX_SUB_STEPS = 6;
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
+}
 
 export class DreidelSimulation {
   private readonly scene = new THREE.Scene();
@@ -24,6 +28,18 @@ export class DreidelSimulation {
 
   private readonly tableMaterial = new CANNON.Material("table");
   private readonly dreidelMaterial = new CANNON.Material("dreidel");
+
+  private readonly raycaster = new THREE.Raycaster();
+  private readonly pointerNdc = new THREE.Vector2();
+  private readonly pointerStart = new THREE.Vector2();
+  private readonly pointerDrag = new THREE.Vector2();
+  private readonly worldUp = new THREE.Vector3(0, 1, 0);
+  private readonly scratchForward = new THREE.Vector3();
+  private readonly scratchRight = new THREE.Vector3();
+  private readonly scratchWorldDrag = new THREE.Vector3();
+  private readonly scratchBodyPosition = new THREE.Vector3();
+  private readonly scratchTipPosition = new THREE.Vector3();
+  private readonly scratchToTarget = new THREE.Vector3();
 
   private readonly container: HTMLElement;
   private readonly onSettled?: (result: DreidelResult) => void;
@@ -37,6 +53,12 @@ export class DreidelSimulation {
   private isSpinning = false;
   private lastResult: DreidelResult | null = null;
   private visualLoadToken = 0;
+
+  private pointerMode: "camera" | "tilt" | "spin" | null = null;
+  private activePointerId: number | null = null;
+  private pendingTiltX = 0;
+  private pendingTiltZ = 0;
+  private lastBodyYaw = Math.random() * Math.PI * 2;
 
   constructor(container: HTMLElement, onSettled?: (result: DreidelResult) => void) {
     this.container = container;
@@ -54,11 +76,14 @@ export class DreidelSimulation {
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    this.renderer.domElement.style.touchAction = "none";
     this.container.append(this.renderer.domElement);
 
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
     this.controls.target.set(0, 0.5, 0);
     this.controls.enableDamping = true;
+    this.controls.enablePan = false;
+    this.controls.enableZoom = true;
     this.controls.maxDistance = 10;
     this.controls.minDistance = 2;
     this.controls.maxPolarAngle = Math.PI * 0.49;
@@ -73,7 +98,13 @@ export class DreidelSimulation {
     this.reset();
     void this.refreshVisualForCurrentModel();
 
+    this.renderer.domElement.addEventListener("pointerdown", this.handlePointerDown, { passive: false });
+    window.addEventListener("pointermove", this.handlePointerMove, { passive: false });
+    window.addEventListener("pointerup", this.handlePointerUp, { passive: false });
+    window.addEventListener("pointercancel", this.handlePointerCancel);
+    window.addEventListener("blur", this.handlePointerCancel);
     window.addEventListener("resize", this.handleResize);
+
     this.animate();
   }
 
@@ -96,50 +127,80 @@ export class DreidelSimulation {
     this.lastResult = null;
     this.stopFrameCount = 0;
     this.isSpinning = false;
+    this.pendingTiltX = 0;
+    this.pendingTiltZ = 0;
+    this.lastBodyYaw = Math.random() * Math.PI * 2;
     this.reset();
     void this.refreshVisualForCurrentModel();
   }
 
-  public spin(options: SpinOptions): void {
+  public spin(options: SpinOptions, launchInput: SpinLaunchInput = { source: "api" }): void {
     this.lastResult = null;
     this.isSpinning = true;
     this.stopFrameCount = 0;
 
+    const source = launchInput.source;
+    const baseTilt = clamp(options.tilt, 0.05, 0.85);
+
     this.dreidelBody.position.set(
-      (Math.random() - 0.5) * 0.7,
-      1.75 + Math.random() * 0.2,
-      (Math.random() - 0.5) * 0.7
+      (Math.random() - 0.5) * 0.75,
+      1.72 + Math.random() * 0.28,
+      (Math.random() - 0.5) * 0.75
     );
 
-    const tiltX = (Math.random() - 0.5) * options.tilt;
-    const tiltZ = (Math.random() - 0.5) * options.tilt;
+    const requestedTiltX = clamp(launchInput.tiltX ?? 0, -0.75, 0.75);
+    const requestedTiltZ = clamp(launchInput.tiltZ ?? 0, -0.75, 0.75);
+    const tiltNoise = baseTilt * (0.36 + Math.random() * 0.8);
+
+    const tiltX = requestedTiltX * 0.55 + (Math.random() - 0.5) * tiltNoise;
+    const tiltZ = requestedTiltZ * 0.55 + (Math.random() - 0.5) * tiltNoise;
+
     const yaw = Math.random() * Math.PI * 2;
+    this.lastBodyYaw = yaw;
     this.dreidelBody.quaternion.setFromEuler(tiltX, yaw, tiltZ, "XYZ");
 
+    const translationalScatter = source === "admin" ? 0.62 : 0.92;
     this.dreidelBody.velocity.set(
-      (Math.random() - 0.5) * 0.8,
+      (Math.random() - 0.5) * translationalScatter,
       0,
-      (Math.random() - 0.5) * 0.8
+      (Math.random() - 0.5) * translationalScatter
     );
 
+    const dragX = clamp(launchInput.dragDirection?.x ?? 0, -1, 1);
+    const dragZ = clamp(launchInput.dragDirection?.y ?? 0, -1, 1);
+
     const axis = new CANNON.Vec3(
-      (Math.random() - 0.5) * options.tilt * 0.35,
+      (Math.random() - 0.5) * baseTilt * 0.35 + dragX * 0.42,
       1,
-      (Math.random() - 0.5) * options.tilt * 0.35
+      (Math.random() - 0.5) * baseTilt * 0.35 + dragZ * 0.42
     );
     axis.normalize();
+
+    let launchSpinRate = clamp(options.spinRate, 6, 120);
+    if (source === "admin") {
+      launchSpinRate += (Math.random() - 0.5) * 1.6;
+    } else if (source === "gesture") {
+      launchSpinRate = launchSpinRate * (0.88 + Math.random() * 0.28) + (Math.random() - 0.5) * 5;
+    } else {
+      launchSpinRate = launchSpinRate * (0.9 + Math.random() * 0.24) + (Math.random() - 0.5) * 5.5;
+    }
+    launchSpinRate = clamp(launchSpinRate, 6, 130);
+
     this.dreidelBody.angularVelocity.set(
-      axis.x * options.spinRate,
-      axis.y * options.spinRate,
-      axis.z * options.spinRate
+      axis.x * launchSpinRate,
+      axis.y * launchSpinRate,
+      axis.z * launchSpinRate
     );
 
     this.dreidelBody.force.set(0, 0, 0);
     this.dreidelBody.torque.set(0, 0, 0);
     this.dreidelBody.wakeUp();
 
-    const nudge = new CANNON.Vec3((Math.random() - 0.5) * 0.06, 0, (Math.random() - 0.5) * 0.06);
+    const nudge = new CANNON.Vec3((Math.random() - 0.5) * 0.09, 0, (Math.random() - 0.5) * 0.09);
     this.dreidelBody.applyImpulse(nudge, this.dreidelBody.position);
+
+    this.pendingTiltX = 0;
+    this.pendingTiltZ = 0;
   }
 
   public reset(): void {
@@ -147,7 +208,10 @@ export class DreidelSimulation {
     this.stopFrameCount = 0;
 
     this.dreidelBody.position.set(0, 1.5, 0);
-    this.dreidelBody.quaternion.setFromEuler(0.08, Math.random() * Math.PI * 2, 0.04, "XYZ");
+    this.lastBodyYaw = Math.random() * Math.PI * 2;
+    this.pendingTiltX = 0;
+    this.pendingTiltZ = 0;
+    this.dreidelBody.quaternion.setFromEuler(0.08, this.lastBodyYaw, 0.04, "XYZ");
     this.dreidelBody.velocity.set(0, 0, 0);
     this.dreidelBody.angularVelocity.set(0, 0, 0);
     this.dreidelBody.force.set(0, 0, 0);
@@ -169,6 +233,195 @@ export class DreidelSimulation {
     this.renderer.setSize(width, height);
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   };
+
+  private readonly handlePointerDown = (event: PointerEvent): void => {
+    if (event.button !== 0 && event.pointerType !== "touch") {
+      return;
+    }
+
+    this.pointerMode = "camera";
+    this.controls.enabled = true;
+
+    if (this.isSpinning) {
+      return;
+    }
+
+    const target = this.detectInteractionTarget(event);
+    if (!target) {
+      return;
+    }
+
+    this.pointerMode = target === "tip" ? "spin" : "tilt";
+    this.activePointerId = event.pointerId;
+    this.pointerStart.set(event.clientX, event.clientY);
+    this.pointerDrag.set(0, 0);
+
+    this.controls.enabled = false;
+    this.renderer.domElement.setPointerCapture(event.pointerId);
+    event.preventDefault();
+  };
+
+  private readonly handlePointerMove = (event: PointerEvent): void => {
+    if (this.activePointerId === null || event.pointerId !== this.activePointerId) {
+      return;
+    }
+
+    if (!this.pointerMode || this.pointerMode === "camera") {
+      return;
+    }
+
+    this.pointerDrag.set(event.clientX - this.pointerStart.x, event.clientY - this.pointerStart.y);
+
+    if (this.pointerMode === "tilt") {
+      this.previewTiltFromDrag();
+    }
+
+    event.preventDefault();
+  };
+
+  private readonly handlePointerUp = (event: PointerEvent): void => {
+    if (this.activePointerId === null || event.pointerId !== this.activePointerId) {
+      return;
+    }
+
+    if (this.pointerMode === "spin") {
+      const dragMagnitude = Math.hypot(this.pointerDrag.x, this.pointerDrag.y);
+      if (dragMagnitude >= 14) {
+        this.launchFromTipDrag(this.pointerDrag.x, this.pointerDrag.y);
+      }
+    }
+
+    this.releasePointerControl();
+  };
+
+  private readonly handlePointerCancel = (): void => {
+    this.releasePointerControl();
+  };
+
+  private releasePointerControl(): void {
+    if (this.activePointerId !== null && this.renderer.domElement.hasPointerCapture(this.activePointerId)) {
+      this.renderer.domElement.releasePointerCapture(this.activePointerId);
+    }
+
+    this.pointerMode = null;
+    this.activePointerId = null;
+    this.pointerDrag.set(0, 0);
+    this.controls.enabled = true;
+  }
+
+  private launchFromTipDrag(deltaX: number, deltaY: number): void {
+    const rect = this.renderer.domElement.getBoundingClientRect();
+    const viewportScale = Math.max(120, Math.min(rect.width, rect.height));
+    const normalizedMagnitude = clamp(Math.hypot(deltaX, deltaY) / viewportScale, 0, 1.8);
+
+    this.camera.getWorldDirection(this.scratchForward);
+    this.scratchForward.y = 0;
+    if (this.scratchForward.lengthSq() < 1e-6) {
+      this.scratchForward.set(0, 0, -1);
+    }
+    this.scratchForward.normalize();
+
+    this.scratchRight.crossVectors(this.scratchForward, this.worldUp);
+    if (this.scratchRight.lengthSq() < 1e-6) {
+      this.scratchRight.set(1, 0, 0);
+    }
+    this.scratchRight.normalize();
+
+    this.scratchWorldDrag
+      .copy(this.scratchRight)
+      .multiplyScalar(deltaX)
+      .addScaledVector(this.scratchForward, -deltaY);
+
+    if (this.scratchWorldDrag.lengthSq() < 1e-6) {
+      this.scratchWorldDrag.set(Math.random() - 0.5, 0, Math.random() - 0.5);
+    }
+    this.scratchWorldDrag.normalize();
+
+    const spinRate = 20 + normalizedMagnitude * 46;
+    const tilt = 0.14 + normalizedMagnitude * 0.34;
+
+    this.spin(
+      {
+        spinRate,
+        tilt
+      },
+      {
+        source: "gesture",
+        tiltX: this.pendingTiltX,
+        tiltZ: this.pendingTiltZ,
+        dragDirection: {
+          x: this.scratchWorldDrag.x,
+          y: this.scratchWorldDrag.z
+        }
+      }
+    );
+  }
+
+  private previewTiltFromDrag(): void {
+    if (this.isSpinning) {
+      return;
+    }
+
+    const rect = this.renderer.domElement.getBoundingClientRect();
+    const normX = this.pointerDrag.x / Math.max(1, rect.width);
+    const normY = this.pointerDrag.y / Math.max(1, rect.height);
+
+    this.pendingTiltX = clamp(-normY * 2.2, -0.6, 0.6);
+    this.pendingTiltZ = clamp(normX * 2.2, -0.6, 0.6);
+
+    this.dreidelBody.velocity.set(0, 0, 0);
+    this.dreidelBody.angularVelocity.set(0, 0, 0);
+    this.dreidelBody.force.set(0, 0, 0);
+    this.dreidelBody.torque.set(0, 0, 0);
+    this.dreidelBody.quaternion.setFromEuler(this.pendingTiltX, this.lastBodyYaw, this.pendingTiltZ, "XYZ");
+    this.syncMesh();
+  }
+
+  private detectInteractionTarget(event: PointerEvent): "tip" | "body" | null {
+    this.updatePointerNdc(event);
+    this.raycaster.setFromCamera(this.pointerNdc, this.camera);
+
+    this.scratchBodyPosition.set(
+      this.dreidelBody.position.x,
+      this.dreidelBody.position.y,
+      this.dreidelBody.position.z
+    );
+
+    const tipLocalY = this.model.bodyHeight / 2 + this.model.stemHeight + this.model.stemRadius * 0.16;
+    const tipLocal = new CANNON.Vec3(0, tipLocalY, 0);
+    const tipWorld = this.dreidelBody.quaternion.vmult(tipLocal).vadd(this.dreidelBody.position);
+    this.scratchTipPosition.set(tipWorld.x, tipWorld.y, tipWorld.z);
+
+    const tipRadius = Math.max(0.09, this.model.stemRadius * 1.9);
+    if (this.rayHitsSphere(this.scratchTipPosition, tipRadius)) {
+      return "tip";
+    }
+
+    const bodyRadius = Math.max(this.model.bodyTopRadius, this.model.bodyBottomRadius) * 0.6;
+    if (this.rayHitsSphere(this.scratchBodyPosition, bodyRadius)) {
+      return "body";
+    }
+
+    return null;
+  }
+
+  private rayHitsSphere(center: THREE.Vector3, radius: number): boolean {
+    this.scratchToTarget.copy(center).sub(this.raycaster.ray.origin);
+    if (this.scratchToTarget.dot(this.raycaster.ray.direction) < 0) {
+      return false;
+    }
+
+    const distanceSq = this.raycaster.ray.distanceSqToPoint(center);
+    return distanceSq <= radius * radius;
+  }
+
+  private updatePointerNdc(event: PointerEvent): void {
+    const rect = this.renderer.domElement.getBoundingClientRect();
+    const x = (event.clientX - rect.left) / rect.width;
+    const y = (event.clientY - rect.top) / rect.height;
+
+    this.pointerNdc.set(x * 2 - 1, -(y * 2 - 1));
+  }
 
   private configureScene(): void {
     this.scene.background = new THREE.Color(0xe6ecf4);
@@ -194,12 +447,12 @@ export class DreidelSimulation {
     this.scene.add(fillLight);
 
     const tableGeometry = new THREE.BoxGeometry(8, 0.5, 8);
-    const tableMaterial = new THREE.MeshStandardMaterial({
+    const tableMeshMaterial = new THREE.MeshStandardMaterial({
       color: 0x6c7f96,
       roughness: 0.82,
       metalness: 0.05
     });
-    const table = new THREE.Mesh(tableGeometry, tableMaterial);
+    const table = new THREE.Mesh(tableGeometry, tableMeshMaterial);
     table.position.y = -0.25;
     table.receiveShadow = true;
     this.scene.add(table);
